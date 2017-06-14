@@ -1,83 +1,133 @@
 import csv
 import random
+from collections import defaultdict
+from math import sqrt
 
 import numpy as np
-from keras.datasets import mnist
-from keras.layers import Input, Dense
-from keras.models import Model
+from keras import backend as K
+from keras.layers import Dense, Dropout
+from keras.models import Sequential
+from keras.optimizers import SGD
 
-# my_data = genfromtxt('data.csv', delimiter=',')
 
-all_data = []
-with open('data.csv', 'rb') as csvfile:
-    spamreader = csv.reader(csvfile, delimiter=',', quotechar='|')
-    for row in spamreader:
-        tmp = row[1].split()[0].split('/')
-        row[1] = (int(tmp[2]) - 1996) * 10000 + int(tmp[0]) * 100 + int(tmp[1])
-        all_data.append([row[0], row[1], row[3], row[5], row[6], row[11], row[13], row[16]])
+# Generate dummy data
 
-data_size = len(all_data)
-fold_n = 10
-fold_size = data_size / fold_n
 
-all_data = np.array(all_data)
+def diff(first, second):
+    second = set(second)
+    return [item for item in first if item not in second]
 
-# clothes washer
-clothes = all_data[:, (0, 1, 2)]
-# dishwasher
-dishwasher = all_data[:, (0, 1, 3)]
-# faucet
-faucet = all_data[:, (0, 1, 4)]
-# shower
-shower = all_data[:, (0, 1, 5)]
-# toilet
-toilet = all_data[:, (0, 1, 6)]
-# whole-home
-whole = all_data[:, (0, 1, 7)]
 
-# homogeneous
-# heterogeneous
-training_index = random.sample(xrange(0, data_size), fold_size)
+def homo(data):
+    training_set = []
+    test_set = []
+    res = defaultdict(list)
+    for _ in data:
+        res[_[0]].append(_.astype(np.float))
+    for k, v in res.items():
+        v_len = len(v)
+        test_index = random.sample(xrange(v_len), v_len / 10)
+        training_index = diff(xrange(v_len), test_index)
+        training_set.extend(np.array(v)[training_index].tolist())
+        test_set.extend(np.array(v)[test_index].tolist())
 
-# this is the size of our encoded representations
-encoding_dim = 32  # 32 floats -> compression of factor 24.5, assuming the input is 784 floats
+    return np.array(training_set)[:, -1], np.array(training_set)[:, 2:-1], np.array(
+        test_set)[:, -1], np.array(test_set)[:, 2:-1]
 
-# this is our input placeholder
-input_img = Input(shape=(784,))
-# "encoded" is the encoded representation of the input
-encoded = Dense(encoding_dim, activation='relu')(input_img)
-# "decoded" is the lossy reconstruction of the input
-decoded = Dense(784, activation='sigmoid')(encoded)
 
-# this model maps an input to its reconstruction
-autoencoder = Model(input_img, decoded)
+def heter(data):
+    training_set = []
+    test_set = []
+    for v in data:
+        v_len = len(v)
+        training_index = random.sample(xrange(v_len), v_len / 10)
+        test_index = diff(xrange(v_len), training_index)
+        training_set.append(data[training_index])
+        test_set.append(data[test_index])
 
-# this model maps an input to its encoded representation
-encoder = Model(input_img, encoded)
+    return training_set[2:-1], training_set[-1], test_set[2:-1], test_set[-1]
 
-# create a placeholder for an encoded (32-dimensional) input
-encoded_input = Input(shape=(encoding_dim,))
-# retrieve the last layer of the autoencoder model
-decoder_layer = autoencoder.layers[-1]
-# create the decoder model
-decoder = Model(encoded_input, decoder_layer(encoded_input))
 
-autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+if __name__ == '__main__':
 
-(x_train, _), (x_test, _) = mnist.load_data()
+    all_data = []
+    with open('data.csv', 'rb') as csvfile:
+        spamreader = csv.reader(csvfile, delimiter=',', quotechar='|')
+        for row in spamreader:
+            tmp = row[1].split()[0].split('/')
+            row[1] = (int(tmp[2]) - 1995) * 10000 + int(tmp[0]) * 100 + int(tmp[1])
+            all_data.append([row[0], row[1], row[3], row[5], row[6], row[11], row[13], row[16]])
 
-x_train = x_train.astype('float32') / 255.
-x_test = x_test.astype('float32') / 255.
-x_train = x_train.reshape((len(x_train), np.prod(x_train.shape[1:])))
-x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
-print x_train.shape
-print x_test.shape
+    data_size = len(all_data)
+    fold_n = 10
+    fold_size = data_size / fold_n
 
-autoencoder.fit(x_train, x_train,
-                epochs=50,
-                batch_size=256,
-                shuffle=True,
-                validation_data=(x_test, x_test))
+    all_data = np.array(all_data)
 
-encoded_imgs = encoder.predict(x_test)
-decoded_imgs = decoder.predict(encoded_imgs)
+    # clothes = all_data[:, (0, 1, 2)]  # clothes washer
+    # dishwasher = all_data[:, (0, 1, 3)]  # dishwasher
+    # faucet = all_data[:, (0, 1, 4)]  # faucet
+    # shower = all_data[:, (0, 1, 5)]  # shower
+    # toilet = all_data[:, (0, 1, 6)]  # toilet
+    # whole = all_data[:, (0, 1, 7)]  # whole-home
+
+
+
+    model = Sequential()
+    # Dense(64) is a fully-connected layer with 64 hidden units.
+    # in the first layer, you must specify the expected input data shape:
+    # here, 20-dimensional vectors.
+    model.add(Dense(64, activation='relu', input_dim=1))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(5, activation='relu'))
+
+    sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+    model.compile(loss='hinge',
+                  optimizer=sgd,
+                  metrics=['accuracy'])
+
+    acc_list = []
+    for _ in xrange(10):
+        # homogeneous
+        x_train, y_train, x_test, y_test = homo(all_data)
+        # heterogeneous
+        # x_train, y_train, x_test, y_test = heter(all_data)
+
+        model.fit(x_train, y_train,
+                  epochs=30,
+                  batch_size=512)
+        score = model.evaluate(x_test, y_test, batch_size=128)
+        acc_list.append(score[1])
+
+        inp = model.input  # input placeholder
+        outputs = [layer.output for layer in model.layers]  # all layer outputs
+        functor = K.function([inp] + [K.learning_phase()], outputs)  # evaluation function
+
+        # Testing
+        layer_outs = functor([np.expand_dims(x_test, axis=1), 0.])[-1]
+        nde = np.mean(np.sqrt(np.power(np.subtract(layer_outs.flatten(), y_test.flatten()), 2) / np.power(
+            np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001, 2)))
+
+        avg_acc = 1 - np.mean(np.subtract(layer_outs.flatten(), y_test.flatten()) / (
+            np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001))
+        recall = np.mean(np.fmin(layer_outs.flatten(), y_test.flatten()) / (
+            np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001))
+
+        f1 = 2 * (avg_acc * recall) / (avg_acc + recall)
+        print ''
+        print 'avg_acc', avg_acc
+        print 'nde', nde
+        print 'recall', recall
+        print 'f1', f1
+        exit()
+
+    n = len(acc_list)
+    mean = sum(acc_list) / n
+    sd = sqrt(sum((x - mean) ** 2 for x in acc_list) / n)
+    print '', mean, sd
