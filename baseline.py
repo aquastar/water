@@ -8,7 +8,7 @@ from keras.layers import Dense, Dropout
 from keras.models import Sequential
 from keras.optimizers import SGD
 # Generate dummy data
-from keras.regularizers import l2
+from keras.regularizers import l2, l1
 
 
 def diff(first, second):
@@ -77,7 +77,24 @@ def metric_var(metric):
     metric = np.array(metric)
     metric_list = ['avg_acc', 'recall', 'f1', 'nde']
     for _ in xrange(len(metric_list)):
-        print metric_list[_], ':{0:.4f}\pm{0:.4f}'.format(np.mean(metric[:, _]), np.std(metric[:, _]))
+        print metric_list[_], ':{0:.4f} - {1:.4f}'.format(np.mean(metric[:, _]), np.std(metric[:, _]))
+
+
+def metric_var_device(metric):
+    metric = np.array(metric)
+    appl_list = ['clothes', 'dishwasher', 'faucet', 'shower', 'toilet']
+    mtx = []
+    for _ in xrange(5):
+        print appl_list[_]
+        metric_list = ['avg_acc', 'recall', 'f1', 'nde']
+        one_device = []
+        for __ in xrange(len(metric_list)):
+            # print metric_list[__], ':{0:.4f}$\pm${1:.4f}'.format(np.mean(metric[_, :, __]), np.std(metric[_, :, __]))
+            one_device.append('{0:.4f}$\pm${1:.4f}'.format(np.mean(metric[_, :, __]), np.std(metric[_, :, __])))
+        mtx.append(one_device)
+    mtx = np.array(mtx).transpose().tolist()
+    for _ in mtx:
+        print '&' + '&'.join(_) + '\\\\'
 
 
 def dense_model(sparse=True):
@@ -86,13 +103,13 @@ def dense_model(sparse=True):
         model.add(Dense(64, activation='relu', input_dim=1))
         model.add(Dropout(0.5))
         model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                        kernel_regularizer=l2(), bias_regularizer=l2()))
+                        kernel_regularizer=l1(), bias_regularizer=l2()))
         model.add(Dropout(0.5))
         model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                        kernel_regularizer=l2(), bias_regularizer=l2()))
+                        kernel_regularizer=l1(), bias_regularizer=l2()))
         model.add(Dropout(0.5))
         model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                        kernel_regularizer=l2(), bias_regularizer=l2()))
+                        kernel_regularizer=l1(), bias_regularizer=l2()))
         model.add(Dropout(0.5))
         model.add(Dense(5, activation='relu'))
     else:
@@ -143,8 +160,8 @@ if __name__ == '__main__':
         whole_metric = []
         appli_metric = [[], [], [], [], []]
 
-        for _ in xrange(3):
-            model.fit(x_train, y_train, epochs=30, batch_size=512)
+        for _ in xrange(10):
+            model.fit(x_train, y_train, epochs=30, batch_size=512, verbose=0)
 
             # Testing
             inp = model.input  # input placeholder
@@ -160,7 +177,5 @@ if __name__ == '__main__':
         print _d
         print '- Whole Home'
         metric_var(whole_metric)
-        appl_list = ['closthes', 'dishwasher', 'faucet', 'shower', 'toilet']
         print '- Device-wise'
-        for _ in xrange(5):
-            metric_var(appli_metric[_])
+        metric_var_device(appli_metric)
