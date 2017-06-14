@@ -1,7 +1,6 @@
 import csv
 import random
 from collections import defaultdict
-from math import sqrt
 
 import numpy as np
 from keras import backend as K
@@ -30,21 +29,22 @@ def homo(data):
         training_set.extend(np.array(v)[training_index].tolist())
         test_set.extend(np.array(v)[test_index].tolist())
 
-    return np.array(training_set)[:, -1], np.array(training_set)[:, 2:-1], np.array(
-        test_set)[:, -1], np.array(test_set)[:, 2:-1]
+    return np.array(training_set)[:, -1:], np.array(training_set)[:, 2:-1], np.array(
+        test_set)[:, -1:], np.array(test_set)[:, 2:-1]
 
 
 def heter(data):
     training_set = []
     test_set = []
-    for v in data:
-        v_len = len(v)
-        training_index = random.sample(xrange(v_len), v_len / 10)
-        test_index = diff(xrange(v_len), training_index)
-        training_set.append(data[training_index])
-        test_set.append(data[test_index])
 
-    return training_set[2:-1], training_set[-1], test_set[2:-1], test_set[-1]
+    v_len = len(data)
+    data = data.astype(np.float)
+    training_index = random.sample(xrange(v_len), v_len / 10)
+    test_index = diff(xrange(v_len), training_index)
+    training_set = data[training_index]
+    test_set = data[test_index]
+    return np.array(training_set)[:, -1:], np.array(training_set)[:, 2:-1], np.array(
+        test_set)[:, -1:], np.array(test_set)[:, 2:-1]
 
 
 def get_whole_rst(pred, real):
@@ -73,6 +73,42 @@ def get_appl_rst(pred, real, col=0):
     return avg_acc, recall, f1, nde,
 
 
+def metric_var(metric):
+    metric = np.array(metric)
+    metric_list = ['avg_acc', 'recall', 'f1', 'nde']
+    for _ in xrange(len(metric_list)):
+        print metric_list[_], ':{0:.4f}\pm{0:.4f}'.format(np.mean(metric[:, _]), np.std(metric[:, _]))
+
+
+def dense_model(sparse=True):
+    model = Sequential()
+    if sparse:
+        model.add(Dense(64, activation='relu', input_dim=1))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l2(), bias_regularizer=l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l2(), bias_regularizer=l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l2(), bias_regularizer=l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(5, activation='relu'))
+    else:
+        model.add(Dense(64, activation='relu', input_dim=1))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu'))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu'))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu'))
+        model.add(Dropout(0.5))
+        model.add(Dense(5, activation='relu'))
+
+    return model
+
+
 if __name__ == '__main__':
 
     all_data = []
@@ -89,37 +125,14 @@ if __name__ == '__main__':
 
     all_data = np.array(all_data)
 
-    # clothes = all_data[:, (0, 1, 2)]  # clothes washer
-    # dishwasher = all_data[:, (0, 1, 3)]  # dishwasher
-    # faucet = all_data[:, (0, 1, 4)]  # faucet
-    # shower = all_data[:, (0, 1, 5)]  # shower
-    # toilet = all_data[:, (0, 1, 6)]  # toilet
-    # whole = all_data[:, (0, 1, 7)]  # whole-home
-
-
-
-    model = Sequential()
-    # Dense(64) is a fully-connected layer with 64 hidden units.
-    # in the first layer, you must specify the expected input data shape:
-    # here, 20-dimensional vectors.
-    model.add(Dense(64, activation='relu', input_dim=1))
-    model.add(Dropout(0.5))
-    model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                    kernel_regularizer=l2(), bias_regularizer=l2()))
-    model.add(Dropout(0.5))
-    model.add(Dense(64, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(64, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(5, activation='relu'))
-
+    model = dense_model()
     sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
     model.compile(loss='cosine_proximity',
                   optimizer=sgd,
                   metrics=['accuracy'])
 
     acc_list = []
-    for _d in ['homo', 'heter']:
+    for _d in ['heter', 'homo']:
         if _d == 'homo':
             print '[homo]'
             model_func = homo
@@ -128,29 +141,33 @@ if __name__ == '__main__':
             model_func = heter
 
         x_train, y_train, x_test, y_test = model_func(all_data)
-        for _ in xrange(10):
-            model.fit(x_train, y_train,
-                      epochs=30,
-                      batch_size=512)
-            score = model.evaluate(x_test, y_test, batch_size=128)
-            acc_list.append(score[1])
+        # acc/recall/f1/nde
+        whole_metric = []
+        appli_metric = [[], [], [], [], []]
 
+        for _ in xrange(3):
+            model.fit(x_train, y_train, epochs=30, batch_size=512)
+
+            # Testing
             inp = model.input  # input placeholder
             outputs = [layer.output for layer in model.layers]  # all layer outputs
             functor = K.function([inp] + [K.learning_phase()], outputs)  # evaluation function
+            layer_outs = functor([x_test, 0.])[-1]
 
-            # Testing
-            layer_outs = functor([np.expand_dims(x_test, axis=1), 0.])[-1]
-
-            print ''
-            print 'acc/recall/f1/nde:', get_whole_rst(layer_outs, y_test)
-            appl_list = ['closthes', 'dishwasher', 'faucet', 'shower', 'toilet']
+            whole_metric.append(list(get_whole_rst(layer_outs, y_test)))
             for _ in xrange(5):
-                print appl_list[_], 'acc/recall/f1/nde:', get_appl_rst(layer_outs, y_test, col=_)
+                appli_metric[_].append(list(get_appl_rst(layer_outs, y_test, col=_)))
 
-            exit()
+        print ''
+        print 'Whole Home'
+        metric_var(whole_metric)
+        appl_list = ['closthes', 'dishwasher', 'faucet', 'shower', 'toilet']
+        print 'Device-wise'
+        for _ in xrange(5):
+            metric_var(appli_metric[_])
 
-        n = len(acc_list)
-        mean = sum(acc_list) / n
-        sd = sqrt(sum((x - mean) ** 2 for x in acc_list) / n)
-        print '', mean, sd
+
+            # n = len(acc_list)
+            # mean = sum(acc_list) / n
+            # sd = sqrt(sum((x - mean) ** 2 for x in acc_list) / n)
+            # print '', mean, sd
