@@ -11,6 +11,7 @@ from keras.optimizers import SGD
 
 
 # Generate dummy data
+from keras.regularizers import l1
 
 
 def diff(first, second):
@@ -79,7 +80,8 @@ if __name__ == '__main__':
     # here, 20-dimensional vectors.
     model.add(Dense(64, activation='relu', input_dim=1))
     model.add(Dropout(0.5))
-    model.add(Dense(64, activation='relu'))
+    model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                    kernel_regularizer=l1(), bias_regularizer=None))
     model.add(Dropout(0.5))
     model.add(Dense(64, activation='relu'))
     model.add(Dropout(0.5))
@@ -88,7 +90,7 @@ if __name__ == '__main__':
     model.add(Dense(5, activation='relu'))
 
     sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(loss='hinge',
+    model.compile(loss='cosine_proximity',
                   optimizer=sgd,
                   metrics=['accuracy'])
 
@@ -114,7 +116,7 @@ if __name__ == '__main__':
         nde = np.mean(np.sqrt(np.power(np.subtract(layer_outs.flatten(), y_test.flatten()), 2) / np.power(
             np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001, 2)))
 
-        avg_acc = 1 - np.mean(np.subtract(layer_outs.flatten(), y_test.flatten()) / (
+        avg_acc = 1 - np.mean(np.abs(np.subtract(layer_outs.flatten(), y_test.flatten())) / (
             np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001))
         recall = np.mean(np.fmin(layer_outs.flatten(), y_test.flatten()) / (
             np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001))
