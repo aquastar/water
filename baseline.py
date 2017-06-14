@@ -134,10 +134,8 @@ if __name__ == '__main__':
     acc_list = []
     for _d in ['heter', 'homo']:
         if _d == 'homo':
-            print '[homo]'
             model_func = homo
         elif _d == 'heter':
-            print '[heter]'
             model_func = heter
 
         x_train, y_train, x_test, y_test = model_func(all_data)
@@ -159,15 +157,10 @@ if __name__ == '__main__':
                 appli_metric[_].append(list(get_appl_rst(layer_outs, y_test, col=_)))
 
         print ''
-        print 'Whole Home'
+        print _d
+        print '- Whole Home'
         metric_var(whole_metric)
         appl_list = ['closthes', 'dishwasher', 'faucet', 'shower', 'toilet']
-        print 'Device-wise'
+        print '- Device-wise'
         for _ in xrange(5):
             metric_var(appli_metric[_])
-
-
-            # n = len(acc_list)
-            # mean = sum(acc_list) / n
-            # sd = sqrt(sum((x - mean) ** 2 for x in acc_list) / n)
-            # print '', mean, sd
