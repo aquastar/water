@@ -8,10 +8,8 @@ from keras import backend as K
 from keras.layers import Dense, Dropout
 from keras.models import Sequential
 from keras.optimizers import SGD
-
-
 # Generate dummy data
-from keras.regularizers import l1
+from keras.regularizers import l2
 
 
 def diff(first, second):
@@ -49,6 +47,32 @@ def heter(data):
     return training_set[2:-1], training_set[-1], test_set[2:-1], test_set[-1]
 
 
+def get_whole_rst(pred, real):
+    nde = np.mean(np.sqrt(np.power(np.subtract(pred.flatten(), real.flatten()), 2) / np.power(
+        np.fmax(pred.flatten(), real.flatten()) + 0.00001, 2)))
+    avg_acc = 1 - np.mean(np.abs(np.subtract(pred.flatten(), real.flatten())) / (
+        np.fmax(pred.flatten(), real.flatten()) + 0.00001))
+    recall = np.mean(np.fmin(pred.flatten(), real.flatten()) / (
+        np.fmax(pred.flatten(), real.flatten()) + 0.00001))
+    f1 = 2 * (avg_acc * recall) / (avg_acc + recall)
+
+    return avg_acc, recall, f1, nde,
+
+
+def get_appl_rst(pred, real, col=0):
+    pred = pred[:, col]
+    real = real[:, col]
+    nde = np.mean(np.sqrt(np.power(np.subtract(pred.flatten(), real.flatten()), 2) / np.power(
+        np.fmax(pred.flatten(), real.flatten()) + 0.00001, 2)))
+    avg_acc = 1 - np.mean(np.abs(np.subtract(pred.flatten(), real.flatten())) / (
+        np.fmax(pred.flatten(), real.flatten()) + 0.00001))
+    recall = np.mean(np.fmin(pred.flatten(), real.flatten()) / (
+        np.fmax(pred.flatten(), real.flatten()) + 0.00001))
+    f1 = 2 * (avg_acc * recall) / (avg_acc + recall)
+
+    return avg_acc, recall, f1, nde,
+
+
 if __name__ == '__main__':
 
     all_data = []
@@ -81,7 +105,7 @@ if __name__ == '__main__':
     model.add(Dense(64, activation='relu', input_dim=1))
     model.add(Dropout(0.5))
     model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                    kernel_regularizer=l1(), bias_regularizer=None))
+                    kernel_regularizer=l2(), bias_regularizer=l2()))
     model.add(Dropout(0.5))
     model.add(Dense(64, activation='relu'))
     model.add(Dropout(0.5))
@@ -95,41 +119,38 @@ if __name__ == '__main__':
                   metrics=['accuracy'])
 
     acc_list = []
-    for _ in xrange(10):
-        # homogeneous
-        x_train, y_train, x_test, y_test = homo(all_data)
-        # heterogeneous
-        # x_train, y_train, x_test, y_test = heter(all_data)
+    for _d in ['homo', 'heter']:
+        if _d == 'homo':
+            print '[homo]'
+            model_func = homo
+        elif _d == 'heter':
+            print '[heter]'
+            model_func = heter
 
-        model.fit(x_train, y_train,
-                  epochs=30,
-                  batch_size=512)
-        score = model.evaluate(x_test, y_test, batch_size=128)
-        acc_list.append(score[1])
+        x_train, y_train, x_test, y_test = model_func(all_data)
+        for _ in xrange(10):
+            model.fit(x_train, y_train,
+                      epochs=30,
+                      batch_size=512)
+            score = model.evaluate(x_test, y_test, batch_size=128)
+            acc_list.append(score[1])
 
-        inp = model.input  # input placeholder
-        outputs = [layer.output for layer in model.layers]  # all layer outputs
-        functor = K.function([inp] + [K.learning_phase()], outputs)  # evaluation function
+            inp = model.input  # input placeholder
+            outputs = [layer.output for layer in model.layers]  # all layer outputs
+            functor = K.function([inp] + [K.learning_phase()], outputs)  # evaluation function
 
-        # Testing
-        layer_outs = functor([np.expand_dims(x_test, axis=1), 0.])[-1]
-        nde = np.mean(np.sqrt(np.power(np.subtract(layer_outs.flatten(), y_test.flatten()), 2) / np.power(
-            np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001, 2)))
+            # Testing
+            layer_outs = functor([np.expand_dims(x_test, axis=1), 0.])[-1]
 
-        avg_acc = 1 - np.mean(np.abs(np.subtract(layer_outs.flatten(), y_test.flatten())) / (
-            np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001))
-        recall = np.mean(np.fmin(layer_outs.flatten(), y_test.flatten()) / (
-            np.fmax(layer_outs.flatten(), y_test.flatten()) + 0.00001))
+            print ''
+            print 'acc/recall/f1/nde:', get_whole_rst(layer_outs, y_test)
+            appl_list = ['closthes', 'dishwasher', 'faucet', 'shower', 'toilet']
+            for _ in xrange(5):
+                print appl_list[_], 'acc/recall/f1/nde:', get_appl_rst(layer_outs, y_test, col=_)
 
-        f1 = 2 * (avg_acc * recall) / (avg_acc + recall)
-        print ''
-        print 'avg_acc', avg_acc
-        print 'nde', nde
-        print 'recall', recall
-        print 'f1', f1
-        exit()
+            exit()
 
-    n = len(acc_list)
-    mean = sum(acc_list) / n
-    sd = sqrt(sum((x - mean) ** 2 for x in acc_list) / n)
-    print '', mean, sd
+        n = len(acc_list)
+        mean = sum(acc_list) / n
+        sd = sqrt(sum((x - mean) ** 2 for x in acc_list) / n)
+        print '', mean, sd
