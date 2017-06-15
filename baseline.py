@@ -6,7 +6,7 @@ import numpy as np
 from keras import backend as K
 from keras.layers import Dense, Dropout
 from keras.models import Sequential
-from keras.optimizers import SGD
+from keras.optimizers import SGD, Adam
 # Generate dummy data
 from keras.regularizers import l2, l1, l1_l2
 
@@ -47,6 +47,22 @@ def heter(data):
         test_set)[:, -1:], np.array(test_set)[:, 2:-1]
 
 
+def sim(data):
+    data = np.load('sim.npy')
+
+    training_set = []
+    test_set = []
+
+    v_len = len(data)
+    data = data.astype(np.float)
+    training_index = random.sample(xrange(v_len), v_len / 10)
+    test_index = diff(xrange(v_len), training_index)
+    training_set = data[training_index]
+    test_set = data[test_index]
+    return np.array(training_set)[:, -1:], np.array(training_set)[:, :-1], np.array(
+        test_set)[:, -1:], np.array(test_set)[:, :-1]
+
+
 def get_whole_rst(pred, real):
     nde = np.mean(np.sqrt(np.power(np.subtract(pred.flatten(), real.flatten()), 2) / np.power(
         np.fmax(pred.flatten(), real.flatten()) + 0.00001, 2)))
@@ -77,7 +93,7 @@ def metric_var(metric):
     metric = np.array(metric)
     metric_list = ['avg_acc', 'recall', 'f1', 'nde']
     for _ in xrange(len(metric_list)):
-        print metric_list[_], ':{0:.4f} - {1:.4f}'.format(np.mean(metric[:, _]), np.std(metric[:, _]))
+        print metric_list[_], ':{0:.4f}$\pm${1:.4f}'.format(np.mean(metric[:, _]), np.std(metric[:, _]))
 
 
 def metric_var_device(metric):
@@ -89,7 +105,7 @@ def metric_var_device(metric):
         metric_list = ['avg_acc', 'recall', 'f1', 'nde']
         one_device = []
         for __ in xrange(len(metric_list)):
-            # print metric_list[__], ':{0:.4f}$\pm${1:.4f}'.format(np.mean(metric[_, :, __]), np.std(metric[_, :, __]))
+            print metric_list[__], ':{0:.4f}$\pm${1:.4f}'.format(np.mean(metric[_, :, __]), np.std(metric[_, :, __]))
             one_device.append('{0:.4f}$\pm${1:.4f}'.format(np.mean(metric[_, :, __]), np.std(metric[_, :, __])))
         mtx.append(one_device)
     mtx = np.array(mtx).transpose().tolist()
@@ -171,25 +187,29 @@ if __name__ == '__main__':
     all_data = np.array(all_data)
 
     sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+    adam = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
 
     acc_list = []
-    for _d in ['homo', 'heter']:
+    for _d in [ 'homo', 'heter']:
         if _d == 'homo':
             model_func = homo
         elif _d == 'heter':
             model_func = heter
+        elif _d == 'sim':
+            model_func = sim
 
         x_train, y_train, x_test, y_test = model_func(all_data)
         # acc/recall/f1/nde
         whole_metric = []
         appli_metric = [[], [], [], [], []]
 
-        for _con in ['l1', 'l2', 'l1l2', 'dense']:
+        for _con in ['l1', 'l2', 'dense']:
+            print '########################################'
             print '- Method :', _d, _con
             model = dense_model(method=_con)
-            model.compile(loss='cosine_proximity', optimizer=sgd, metrics=['accuracy'])
+            model.compile(loss='mean_squared_logarithmic_error', optimizer=sgd, metrics=['accuracy'])
             for _ in xrange(10):
-                model.fit(x_train, y_train, epochs=30, batch_size=512, verbose=0)
+                model.fit(x_train, y_train, epochs=20, batch_size=512, verbose=0)
 
                 # Testing
                 inp = model.input  # input placeholder
@@ -198,10 +218,9 @@ if __name__ == '__main__':
                 layer_outs = functor([x_test, 0.])[-1]
 
                 whole_metric.append(list(get_whole_rst(layer_outs, y_test)))
-                for _ in xrange(5):
-                    appli_metric[_].append(list(get_appl_rst(layer_outs, y_test, col=_)))
+                for _app in xrange(5):
+                    appli_metric[_app].append(list(get_appl_rst(layer_outs, y_test, col=_app)))
 
-            print ''
             print '- Whole Home'
             metric_var(whole_metric)
             print '- Device-wise'
