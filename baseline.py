@@ -8,7 +8,7 @@ from keras.layers import Dense, Dropout
 from keras.models import Sequential
 from keras.optimizers import SGD
 # Generate dummy data
-from keras.regularizers import l2, l1
+from keras.regularizers import l2, l1, l1_l2
 
 
 def diff(first, second):
@@ -82,7 +82,7 @@ def metric_var(metric):
 
 def metric_var_device(metric):
     metric = np.array(metric)
-    appl_list = ['clothes', 'dishwasher', 'faucet', 'shower', 'toilet']
+    appl_list = ['faucet', 'dishwasher', 'toilet', 'shower', 'clothes']
     mtx = []
     for _ in xrange(5):
         print appl_list[_]
@@ -97,19 +97,45 @@ def metric_var_device(metric):
         print '&' + '&'.join(_) + '\\\\'
 
 
-def dense_model(sparse=True):
+def dense_model(method='l1'):
     model = Sequential()
-    if sparse:
+    if method == 'l1':
         model.add(Dense(64, activation='relu', input_dim=1))
         model.add(Dropout(0.5))
         model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                        kernel_regularizer=l1(), bias_regularizer=l2()))
+                        kernel_regularizer=l1(), bias_regularizer=l1()))
         model.add(Dropout(0.5))
         model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                        kernel_regularizer=l1(), bias_regularizer=l2()))
+                        kernel_regularizer=l1(), bias_regularizer=l1()))
         model.add(Dropout(0.5))
         model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
-                        kernel_regularizer=l1(), bias_regularizer=l2()))
+                        kernel_regularizer=l1(), bias_regularizer=l1()))
+        model.add(Dropout(0.5))
+        model.add(Dense(5, activation='relu'))
+    elif method == 'l2':
+        model.add(Dense(64, activation='relu', input_dim=1))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l2(), bias_regularizer=l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l2(), bias_regularizer=l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l2(), bias_regularizer=l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(5, activation='relu'))
+    elif method == 'l1l2':
+        model.add(Dense(64, activation='relu', input_dim=1))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l1_l2(), bias_regularizer=l1_l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l1_l2(), bias_regularizer=l1_l2()))
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation='relu', kernel_initializer='glorot_uniform', bias_initializer='ones',
+                        kernel_regularizer=l1_l2(), bias_regularizer=l1_l2()))
         model.add(Dropout(0.5))
         model.add(Dense(5, activation='relu'))
     else:
@@ -134,7 +160,9 @@ if __name__ == '__main__':
         for row in spamreader:
             tmp = row[1].split()[0].split('/')
             row[1] = (int(tmp[2]) - 1995) * 10000 + int(tmp[0]) * 100 + int(tmp[1])
-            all_data.append([row[0], row[1], row[3], row[5], row[6], row[11], row[13], row[16]])
+            # appl_list = ['clothes', 'dishwasher', 'faucet', 'shower', 'toilet']
+
+            all_data.append([row[0], row[1], row[6], row[5], row[13], row[11], row[3], row[16]])
 
     data_size = len(all_data)
     fold_n = 10
@@ -142,14 +170,10 @@ if __name__ == '__main__':
 
     all_data = np.array(all_data)
 
-    model = dense_model()
     sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(loss='cosine_proximity',
-                  optimizer=sgd,
-                  metrics=['accuracy'])
 
     acc_list = []
-    for _d in ['heter', 'homo']:
+    for _d in ['homo', 'heter']:
         if _d == 'homo':
             model_func = homo
         elif _d == 'heter':
@@ -160,22 +184,25 @@ if __name__ == '__main__':
         whole_metric = []
         appli_metric = [[], [], [], [], []]
 
-        for _ in xrange(10):
-            model.fit(x_train, y_train, epochs=30, batch_size=512, verbose=0)
+        for _con in ['l1', 'l2', 'l1l2', 'dense']:
+            print '- Method :', _d, _con
+            model = dense_model(method=_con)
+            model.compile(loss='cosine_proximity', optimizer=sgd, metrics=['accuracy'])
+            for _ in xrange(10):
+                model.fit(x_train, y_train, epochs=30, batch_size=512, verbose=0)
 
-            # Testing
-            inp = model.input  # input placeholder
-            outputs = [layer.output for layer in model.layers]  # all layer outputs
-            functor = K.function([inp] + [K.learning_phase()], outputs)  # evaluation function
-            layer_outs = functor([x_test, 0.])[-1]
+                # Testing
+                inp = model.input  # input placeholder
+                outputs = [layer.output for layer in model.layers]  # all layer outputs
+                functor = K.function([inp] + [K.learning_phase()], outputs)  # evaluation function
+                layer_outs = functor([x_test, 0.])[-1]
 
-            whole_metric.append(list(get_whole_rst(layer_outs, y_test)))
-            for _ in xrange(5):
-                appli_metric[_].append(list(get_appl_rst(layer_outs, y_test, col=_)))
+                whole_metric.append(list(get_whole_rst(layer_outs, y_test)))
+                for _ in xrange(5):
+                    appli_metric[_].append(list(get_appl_rst(layer_outs, y_test, col=_)))
 
-        print ''
-        print _d
-        print '- Whole Home'
-        metric_var(whole_metric)
-        print '- Device-wise'
-        metric_var_device(appli_metric)
+            print ''
+            print '- Whole Home'
+            metric_var(whole_metric)
+            print '- Device-wise'
+            metric_var_device(appli_metric)
